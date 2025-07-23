@@ -1,269 +1,74 @@
 const express = require("express");
-const fetch = (...args) =>
-  import("node-fetch").then(({ default: fetch }) => fetch(...args));
 const cors = require("cors");
-const path = require("path");
+const fetch = require("node-fetch");
 
 const app = express();
-
-app.use(
-  cors({
-    origin: "*",
-    methods: ["GET", "POST", "DELETE"],
-    allowedHeaders: ["Content-Type"],
-  })
-);
-
+app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname)));
 
-// === Konfigurasi ===
-const apikey = "ptla_CQII9RpVOHO5sYX8cfD9N7RCXuSEih5XoLXsrp2tiXC";
-const capikey = "ptlc_MmEXs5QcREJsOR6RlcQG9mfROiMiiDaxN2lm7HoaS0S";
-const domain = "https://jannzxhosst.gaxz.biz.id";
-const nestid = "5";
-const egg = "15";
-const loc = "1";
+const GROQ_API_KEY = "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";
+const GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";
 
-// === Buat Panel ===
-app.post("/create", async (req, res) => {
-  const { username, email, ram, disk, cpu } = req.body;
-  const password = username + Math.floor(Math.random() * 10000);
-  const name = username + "-server";
+app.post("/chat", async (req, res) => {
+  const userMessage = req.body.message;
+  const tone = req.body.tone || "default";
+
+  if (!userMessage) {
+    return res.status(400).json({ error: "Message is required" });
+  }
+
+  const cekPembuat = /siapa.+(pembuat|buat|creator|developer|programmer|pengembang)|kamu.+dibuat/i;
+  if (cekPembuat.test(userMessage)) {
+    return res.json({ reply: "JoseAI dibuat dan dikembangkan oleh Joocode Official." });
+  }
+
+  const tonePrompt = {
+    default: "Jawab pintar, sopan, seperti ChatGPT. Bisa bantu semua hal: menjelaskan topik umum, bantu bikin kode, skrip, ide, pelajaran, dll.",
+    coding: "Fokus ke pemrograman. Bantu buat, debug, dan jelasin kode HTML, CSS, JS, Python, PHP, dsb."
+  };
 
   try {
-    // Buat user
-    const userRes = await fetch(`${domain}/api/application/users`, {
+    const response = await fetch(GROQ_ENDPOINT, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apikey}`,
-        Accept: "application/json",
+        Authorization: `Bearer ${GROQ_API_KEY}`,
+        "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        email,
-        username,
-        first_name: username,
-        last_name: "User",
-        password,
-        language: "en",
-      }),
-    });
-    const userData = await userRes.json();
-    if (userData.errors) return res.json({ error: userData.errors[0].detail });
-    const userId = userData.attributes.id;
-
-    // Ambil startup
-    const eggData = await fetch(
-      `${domain}/api/application/nests/${nestid}/eggs/${egg}`,
-      {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${apikey}`,
-          Accept: "application/json",
-          "Content-Type": "application/json",
-        },
-      }
-    );
-    const eggJson = await eggData.json();
-    const startup = eggJson.attributes.startup;
-
-    // Buat server
-    const serverRes = await fetch(`${domain}/api/application/servers`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apikey}`,
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        name,
-        user: userId,
-        egg: parseInt(egg),
-        docker_image: eggJson.attributes.docker_image,
-        startup,
-        environment: {
-          INST: "npm",
-          USER_UPLOAD: "0",
-          AUTO_UPDATE: "0",
-          CMD_RUN: "npm start",
-        },
-        limits: {
-          memory: ram,
-          swap: 0,
-          disk: typeof disk !== "undefined" ? disk : ram,
-          io: 500,
-          cpu: cpu ?? 100,
-        },
-        feature_limits: {
-          databases: 5,
-          backups: 5,
-          allocations: 5,
-        },
-        deploy: {
-          locations: [parseInt(loc)],
-          dedicated_ip: false,
-          port_range: [],
-        },
-      }),
-    });
-    const serverData = await serverRes.json();
-    if (serverData.errors)
-      return res.json({ error: serverData.errors[0].detail });
-
-    res.json({
-      username,
-      password,
-      email,
-      panel_url: `${domain}`,
-      server_id: serverData.attributes.id,
-    });
-  } catch (err) {
-    res.status(500).json({ error: "Gagal membuat panel", detail: err.message });
-  }
-});
-
-// === List Semua Server ===
-app.get("/servers", async (req, res) => {
-  try {
-    const fetchServers = await fetch(`${domain}/api/application/servers`, {
-      headers: {
-        Authorization: `Bearer ${apikey}`,
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-    });
-    const serverData = await fetchServers.json();
-    if (!serverData || !Array.isArray(serverData.data)) {
-      return res.status(400).json({ error: "Invalid server response" });
-    }
-    res.json(serverData.data);
-  } catch (err) {
-    res
-      .status(500)
-      .json({ error: "Failed to fetch servers", detail: err.message });
-  }
-});
-
-// === Hapus Server ===
-app.delete("/server/:id", async (req, res) => {
-  try {
-    const id = req.params.id;
-    await fetch(`${domain}/api/application/servers/${id}`, {
-      method: "DELETE",
-      headers: {
-        Authorization: `Bearer ${apikey}`,
-        Accept: "application/json",
-      },
-    });
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: "Gagal hapus server", detail: err.message });
-  }
-});
-
-// === Buat Admin ===
-app.post("/create-admin", async (req, res) => {
-  const { username, email } = req.body;
-  const password = username + Math.floor(Math.random() * 10000);
-
-  try {
-    const userRes = await fetch(`${domain}/api/application/users`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${capikey}`,
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        email,
-        username,
-        first_name: username,
-        last_name: "Admin",
-        password,
-        language: "en",
-        root_admin: true,
-      }),
+        model: "llama3-70b-8192",
+        messages: [
+          {
+            role: "system",
+            content: `Kamu adalah JoseAI, AI assistant cerdas buatan Joocode Official. Kamu sangat pintar dan fleksibel seperti ChatGPT. Bisa bantu dalam banyak hal: menjelaskan konsep, bantu bikin HTML, CSS, JavaScript, Python, PHP, nulis artikel, bantu soal sekolah, debugging, Dan usahakan menjawab dengan bahasa yang asik dan sopan, juga menggunakan bahasa indonesia, dll. ${tonePrompt[tone] || tonePrompt.default}`
+          },
+          {
+            role: "user",
+            content: userMessage
+          }
+        ],
+        temperature: 0.7
+      })
     });
 
-    const userData = await userRes.json();
-    if (!userRes.ok || userData.errors) {
-      return res.json({ error: userData.errors?.[0]?.detail || "Gagal membuat admin" });
+    const data = await response.json();
+
+    let aiReply = "[!] Gagal mendapatkan respon dari AI.";
+    if (data && data.choices && data.choices.length > 0) {
+      aiReply = data.choices[0].message.content;
     }
 
-    res.json({
-      username,
-      password,
-      panel_url: domain,
-    });
-  } catch (err) {
-    res.status(500).json({ error: "Gagal membuat admin", detail: err.message });
+    res.json({ reply: aiReply });
+  } catch (error) {
+    console.error("❌ Error saat panggil API:", error);
+    res.status(500).json({ error: "Terjadi kesalahan saat memproses permintaan." });
   }
 });
 
-// === List Semua Admin ===
-app.get("/admins", async (req, res) => {
-  try {
-    const fetchUsers = await fetch(`${domain}/api/application/users`, {
-      headers: {
-        Authorization: `Bearer ${capikey}`,
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-    });
-    const userData = await fetchUsers.json();
-    if (!userData || !Array.isArray(userData.data)) {
-      return res.status(400).json({ error: "Invalid admin response" });
-    }
-
-    const admins = userData.data
-      .filter((u) => u.attributes.root_admin === true && u.attributes.username)
-      .map((u) => ({
-        id: u.attributes.id,
-        username: u.attributes.username.trim(),
-      }));
-
-    res.json(admins);
-  } catch (err) {
-    res.status(500).json({ error: "Failed to fetch admins", detail: err.message });
-  }
-});
-
-// === Hapus Admin ===
-app.delete("/admin/:id", async (req, res) => {
-  try {
-    const id = req.params.id;
-    await fetch(`${domain}/api/application/users/${id}`, {
-      method: "DELETE",
-      headers: {
-        Authorization: `Bearer ${capikey}`,
-        Accept: "application/json",
-      },
-    });
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: "Gagal hapus admin", detail: err.message });
-  }
-});
-
-// === Endpoint Default ===
 app.get("/", (req, res) => {
-  res.json({
-    message: "Panel API is running",
-    endpoints: {
-      "POST /create": "Create panel",
-      "GET /servers": "List all servers",
-      "DELETE /server/:id": "Delete server",
-      "POST /create-admin": "Create admin user",
-      "GET /admins": "List admins",
-      "DELETE /admin/:id": "Delete admin",
-    },
-    status: "online",
-  });
+  res.send("✅ JoseAI Backend Aktif (v3) - Powered by Joocode Official");
 });
 
-// === Start Server ===
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, "0.0.0.0", () =>
-  console.log(`✅ Panel API ready at :${PORT}`)
-);
+app.listen(PORT, () => {
+  console.log(`JoseAI Berjalan Pada http://localhost:${PORT}`);
+});
